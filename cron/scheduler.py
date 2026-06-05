@@ -1854,7 +1854,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
             logger.debug("Job '%s': failed to reap stale auxiliary clients: %s", job_id, e)
 
 
-def tick(verbose: bool = True, adapters=None, loop=None) -> int:
+def tick(verbose: bool = True, adapters=None, loop=None, hooks=None) -> int:
     """
     Check and run all due jobs.
     
@@ -1928,6 +1928,29 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
                 _max_workers if _max_workers else "unbounded",
             )
 
+        def _emit_job_end(job: dict, success: bool, final_response: str, error: Optional[str], delivery_error: Optional[str]) -> None:
+            if hooks is None:
+                return
+
+            context = {
+                "job_id": job["id"],
+                "job_name": job.get("name"),
+                "success": success,
+                "response": final_response,
+                "error": error,
+                "delivery_error": delivery_error,
+                "silent": SILENT_MARKER in final_response.upper(),
+                "no_agent": bool(job.get("no_agent")),
+            }
+            try:
+                coro = hooks.emit("job:end", context)
+                if loop is not None:
+                    asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=5)
+                else:
+                    asyncio.run(coro)
+            except Exception as exc:
+                logger.debug("job:end hook failed for job %s: %s", job.get("id"), exc)
+
         def _process_job(job: dict) -> bool:
             """Run one due job end-to-end: execute, save, deliver, mark."""
             try:
@@ -1965,6 +1988,7 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
                     error = "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
 
                 mark_job_run(job["id"], success, error, delivery_error=delivery_error)
+                _emit_job_end(job, success, final_response, error, delivery_error)
                 return True
 
             except Exception as e:
