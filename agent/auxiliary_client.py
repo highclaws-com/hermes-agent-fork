@@ -3080,6 +3080,8 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
         async_kwargs["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
     elif base_url_host_matches(sync_base_url, "integrate.api.nvidia.com"):
         async_kwargs["default_headers"] = build_nvidia_nim_headers(sync_base_url)
+    elif sync_client.api_key == "vk-openai-codex":
+        async_kwargs["default_headers"] = _codex_cloudflare_headers(sync_client.api_key)
     else:
         # Fall back to profile.default_headers for providers that declare
         # client-level headers on their ProviderProfile (e.g. attribution
@@ -3371,6 +3373,8 @@ def resolve_provider_client(
                 )
             elif base_url_host_matches(custom_base, "integrate.api.nvidia.com"):
                 extra["default_headers"] = build_nvidia_nim_headers(custom_base)
+            elif custom_key == "vk-openai-codex":
+                extra["default_headers"] = _codex_cloudflare_headers(custom_key)
             else:
                 # Fall back to profile.default_headers for providers that
                 # declare client-level attribution headers on their profile.
