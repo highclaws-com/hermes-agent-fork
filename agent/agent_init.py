@@ -733,7 +733,10 @@ def init_agent(
                 }
             elif base_url_host_matches(effective_base, "portal.qwen.ai"):
                 client_kwargs["default_headers"] = _ra()._qwen_portal_headers()
-            elif base_url_host_matches(effective_base, "chatgpt.com"):
+            elif base_url_host_matches(effective_base, "chatgpt.com") or (
+                agent.provider == "custom"
+                and api_key == "vk-openai-codex"
+            ):
                 from agent.auxiliary_client import _codex_cloudflare_headers
                 client_kwargs["default_headers"] = _codex_cloudflare_headers(api_key)
             elif "default_headers" not in client_kwargs:
