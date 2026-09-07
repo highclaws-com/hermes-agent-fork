@@ -420,6 +420,13 @@ class ChatCompletionsTransport(ProviderTransport):
         if overrides:
             api_kwargs.update(overrides)
 
+        session_id = params.get("session_id")
+        if session_id:
+            api_kwargs["extra_headers"] = {
+                **api_kwargs.get("extra_headers", {}),
+                "x-opencode-session": session_id,
+            }
+
         return api_kwargs
 
     def _build_kwargs_from_profile(self, profile, model, sanitized, tools, params):
@@ -535,6 +542,13 @@ class ChatCompletionsTransport(ProviderTransport):
 
         if extra_body:
             api_kwargs["extra_body"] = extra_body
+
+        session_id = params.get("session_id")
+        if session_id:
+            api_kwargs["extra_headers"] = {
+                **api_kwargs.get("extra_headers", {}),
+                "x-opencode-session": session_id,
+            }
 
         return api_kwargs
 
