@@ -46,7 +46,9 @@ def test_main_turn_sends_stable_session_header_on_every_transport(provider, mode
     assert first == second == "sess-affinity-1"
 
     other = _agent("openrouter", "anthropic/claude-sonnet-4.6", "https://openrouter.ai/api/v1")
-    assert "x-opencode-session" not in (build_api_kwargs(other, _MSGS).get("extra_headers") or {})
+    # HighClaws compatibility is broader than OpenCode affinity: every Chat
+    # Completions request carries the current session, regardless of provider.
+    assert build_api_kwargs(other, _MSGS)["extra_headers"]["x-opencode-session"] == "sess-affinity-1"
 
 
 def test_auxiliary_calls_share_the_main_turn_session_key():

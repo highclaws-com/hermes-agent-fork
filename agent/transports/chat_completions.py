@@ -285,11 +285,17 @@ def _base_kwargs(model: str, sanitized: list, tools: Any, params: dict, profile:
 
 
 def _finish_kwargs(api_kwargs: dict[str, Any], sanitized: list, params: dict, *, supports_prompt_cache_key: bool) -> dict[str, Any]:
-    """Tail shared by both build paths: content-addressed prompt_cache_key, then return."""
+    """Tail shared by both build paths: cache key and HighClaws session header."""
     _add_prompt_cache_key(
         api_kwargs, messages=sanitized, tools=api_kwargs.get("tools"), supports_prompt_cache_key=supports_prompt_cache_key,
         session_id=params.get("session_id"), cache_scope_id=params.get("cache_scope_id"),
     )
+    session_id = params.get("session_id")
+    if session_id:
+        api_kwargs["extra_headers"] = {
+            **api_kwargs.get("extra_headers", {}),
+            "x-opencode-session": session_id,
+        }
     return api_kwargs
 
 

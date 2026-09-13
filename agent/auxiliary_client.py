@@ -4341,6 +4341,9 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
         headers = _apply_user_default_headers(build_or_headers())
     elif _is_official_codex_base_url(sync_base_url):
         headers = _apply_user_default_headers(_codex_cloudflare_headers(sync_client.api_key, base_url=sync_base_url))
+    elif sync_client.api_key == "vk-openai-codex":
+        headers = _apply_user_default_headers(
+            _codex_cloudflare_headers(sync_client.api_key, base_url=sync_base_url))
     else:
         # Provider for the profile-header fallback is inferred from the hostname.
         try:
@@ -4690,6 +4693,8 @@ def _resolve_custom_branch(req: _ResolveRequest) -> _ResolveResult:
         if _dq:
             extra["default_query"] = _dq
         _custom_headers = _endpoint_default_headers(custom_base, provider, is_vision=req.is_vision)
+        if custom_key == "vk-openai-codex":
+            _custom_headers = _codex_cloudflare_headers(custom_key, base_url=custom_base)
         if _custom_headers:
             extra["default_headers"] = _custom_headers
         client = _create_openai_client(api_key=custom_key, base_url=_clean_base, **extra)
@@ -4716,6 +4721,8 @@ def _named_custom_openai_wire_client(custom_base: str, custom_key: Any):
     _clean_base, _dq = _extract_url_query_params(_to_openai_base_url(custom_base))
     _extra = {"default_query": _dq} if _dq else {}
     _headers = _apply_user_default_headers(None)
+    if custom_key == "vk-openai-codex":
+        _headers = _codex_cloudflare_headers(custom_key, base_url=custom_base)
     if _headers:
         _extra["default_headers"] = _headers
     return _create_openai_client(api_key=custom_key, base_url=_clean_base, **_extra)

@@ -577,6 +577,7 @@ def _action_create(a: Dict[str, Any]) -> str:
             # CLI-only lane: absent from CRONJOB_SCHEMA and the model dispatch (models don't pick models).
             reasoning_effort=a["reasoning_effort"],
             failure_deliver=_resolve_cron_context_deliver(_normalize_deliver_param(a["failure_deliver"])),
+            delete_after=a["delete_after"],
             **({"paused": a["paused"], "paused_reason": a["paused_reason"]}
                if a["paused"] is not False or a["paused_reason"] is not None else {}))
     except CronSchedulerRegistrationError as exc:
@@ -794,6 +795,8 @@ def _update_run_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str
         repeat_state = dict(job.get("repeat") or {})
         repeat_state["times"] = normalize_repeat_value(a["repeat"])
         updates["repeat"] = repeat_state
+    if a["delete_after"] is not None:
+        updates["delete_after"] = a["delete_after"]
     if a["schedule"] is not None:
         parsed_schedule = parse_schedule(a["schedule"])
         updates["schedule"] = parsed_schedule
@@ -879,6 +882,7 @@ def cronjob(
     monitor_url: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     failure_deliver: Optional[Union[str, List[str]]] = None,
+    delete_after: Optional[int] = 7,
     task_id: str = None,
     session_id: Optional[str] = None,
     paused: bool = False,
@@ -955,6 +959,11 @@ Jobs run in a fresh session with no current-chat context, so prompts must be sel
             "repeat": {
                 "type": "integer",
                 "description": "Optional repeat count. Omit for defaults (once for one-shot, forever for recurring)."
+            },
+            "delete_after": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Days to retain this completed job before deletion. Default 7; 0 deletes immediately."
             },
             "deliver": {
                 "type": "string",

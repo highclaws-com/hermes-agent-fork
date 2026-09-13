@@ -2422,9 +2422,30 @@ def _run_with_fire_claim_heartbeat(job: dict, run) -> bool:
         heartbeat_thread.join(timeout=1.0)
 
 
+def _emit_job_end(hooks, loop, job: dict, success: bool, final_response: str,
+                  error: Optional[str], delivery_error: Optional[str]) -> None:
+    if hooks is None:
+        return
+    context = {
+        "job_id": job["id"], "job_name": job.get("name"), "success": success,
+        "response": final_response, "error": error, "delivery_error": delivery_error,
+        "silent": _is_cron_silence_response(final_response),
+        "no_agent": bool(job.get("no_agent")),
+    }
+    try:
+        coro = hooks.emit("job:end", context)
+        if loop is not None:
+            asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=5)
+        else:
+            asyncio.run(coro)
+    except Exception as exc:
+        logger.debug("job:end hook failed for job %s: %s", job.get("id"), exc)
+
+
 def run_one_job(
     job: dict, *, adapters=None, loop=None, verbose: bool = False,
     extra_prompt: Optional[str] = None, cancel_event: Optional[_CancelEventLike] = None,
+    hooks=None,
 ) -> bool:
     """Run ONE due job end-to-end: execute → save output → deliver → mark. Shared by the built-in
     ticker and external providers' ``fire_due``; does NOT decide due-ness or acquire the initial
@@ -2487,7 +2508,8 @@ def run_one_job(
                     if cancel_event is not None
                     else lost_ownership
                 ),
-                execution_token=execution_token))
+                execution_token=execution_token,
+                hooks=hooks))
     finally:
         with _running_lock:
             executions = _running_fire_owners.get(job["id"])
@@ -2790,7 +2812,7 @@ def _deliver_crash_failure(
 def _run_one_job_body(
     job: dict, *, adapters=None, loop=None, verbose: bool = False,
     extra_prompt: Optional[str] = None, fire_claim_lost: Optional[_CancelEventLike] = None,
-    execution_token: Optional[object] = None,
+    execution_token: Optional[object] = None, hooks=None,
 ) -> bool:
     fence = _FireOwnership(job, fire_claim_lost)
     fire_owner = fence.owner
@@ -2918,7 +2940,9 @@ def _run_one_job_body(
             _finish_interrupted_run(job, execution_id, delivery_error)
             return True
 
-        return _finish_completed_run(d, fire_owner, execution_id)
+        result = _finish_completed_run(d, fire_owner, execution_id)
+        _emit_job_end(hooks, loop, job, d.success, final_response, d.error, d.delivery_error)
+        return result
 
     except BaseException as e:  # noqa: BLE001 — deliberate: see below
         # BaseException, not Exception: CancelledError/KeyboardInterrupt/SystemExit propagate here.
@@ -3565,7 +3589,7 @@ def _sweep_mcp_orphans() -> None:
         logger.debug("Post-tick MCP orphan cleanup failed: %s", _e)
 
 
-def _process_due_job(job: dict, adapters, loop, verbose: bool) -> bool:
+def _process_due_job(job: dict, adapters, loop, verbose: bool, hooks=None) -> bool:
     """Run one due job via the shared ``run_one_job`` body."""
     # Claim only when the worker actually starts, so a queued lease can't expire first.
     claimed = claim_job_for_fire(job["id"], return_job=True)
@@ -3577,7 +3601,8 @@ def _process_due_job(job: dict, adapters, loop, verbose: bool) -> bool:
     claimed_job = dict(claimed) if isinstance(claimed, dict) else dict(job)
     claimed_job["execution_id"] = job["execution_id"]
     claimed_job["_scheduled_instant"] = job.get("_scheduled_instant")
-    return run_one_job(claimed_job, adapters=adapters, loop=loop, verbose=verbose)
+    return run_one_job(
+        claimed_job, adapters=adapters, loop=loop, verbose=verbose, hooks=hooks)
 
 
 def _submit_with_guard(job: dict, pool: concurrent.futures.ThreadPoolExecutor, process_job):
@@ -3691,7 +3716,9 @@ def _sweep_mcp_orphans_when_all_done(futures: list) -> None:
 
 
 def tick(
-    verbose: bool = True, adapters=None, loop=None, sync: bool = True, *, can_dispatch=None):
+    verbose: bool = True, adapters=None, loop=None, sync: bool = True, *, can_dispatch=None,
+    hooks=None,
+):
     """Check and run all due jobs. File-locked so only one tick runs at a time (gateway ticker vs
     standalone daemon / manual tick). ``can_dispatch``: optional gate; false leaves due jobs for the
     next allowed tick. Returns the number of jobs executed (0 if another tick holds the lock)."""
@@ -3758,7 +3785,7 @@ def tick(
                 _max_workers if _max_workers else "unbounded")
 
         def _process_job(job: dict) -> bool:
-            return _process_due_job(job, adapters, loop, verbose)
+            return _process_due_job(job, adapters, loop, verbose, hooks=hooks)
 
         # Persistent pool, non-blocking dispatch. Already-running jobs are skipped; mark_job_run
         # re-arms next_run_at on completion, so no catch-up queue is needed.

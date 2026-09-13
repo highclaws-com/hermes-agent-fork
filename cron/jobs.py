@@ -1464,6 +1464,10 @@ def _with_job(
 def _complete_job_record(job: Dict[str, Any]) -> None:
     """Retire *job* in place as a terminal completion (record kept for `cronjob list`)."""
     job.update(enabled=False, state="completed", next_run_at=None)
+    delete_after = job.get("delete_after")
+    if delete_after is not None:
+        job["delete_at"] = (
+            _hermes_now() + timedelta(days=max(0, int(delete_after)))).isoformat()
 
 
 def _activate_job_record(job: Dict[str, Any]) -> None:
@@ -1588,12 +1592,14 @@ _CREATE_FIELD_NORMALIZERS: Dict[str, Callable[[Any], Any]] = {
     "no_agent": bool,
     "context_from": _normalize_context_from,
     "failure_deliver": _normalize_failure_deliver,
+    "delete_after": lambda v: None if v is None else max(0, int(v)),
 }
 _UPDATE_FIELD_NORMALIZERS: Dict[str, Callable[[Any], Any]] = {
     "workdir": lambda v: None if v in {None, "", False} else _normalize_workdir(v),
     "monitor_script": _normalize_job_optional_text,
     "monitor_url": _normalize_job_optional_text,
     "reasoning_effort": _normalize_reasoning_effort,
+    "delete_after": lambda v: max(0, int(v)),
 }
 
 
@@ -1705,6 +1711,7 @@ def create_job(
     monitor_url: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     failure_deliver: Optional[str] = None,
+    delete_after: Optional[int] = None,
     paused: bool = False,
     paused_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1802,7 +1809,7 @@ def create_job(
     # jobs.
     for key, value in (
         ("attach_to_session", normalized_attach), ("reasoning_effort", normalized_reasoning_effort),
-        ("failure_deliver", f["failure_deliver"]),
+        ("failure_deliver", f["failure_deliver"]), ("delete_after", f["delete_after"]),
     ):
         if value is not None:
             job[key] = value
@@ -2318,6 +2325,10 @@ def mark_job_run(
         now = _hermes_now().isoformat()
         _record_run_outcome(job, success, error, delivery_error, status, now)
         _advance_after_run(job, now)
+        if job.get("state") == "completed" and job.get("delete_after") == 0:
+            jobs.pop(_i)
+            save_jobs(jobs, removed_ids={job_id})
+            return True
         save_jobs(jobs)
         return True
 
@@ -2639,8 +2650,6 @@ def _sweep_completed_oneshots(
     measured from ``last_run_at``; a record without a parseable one is kept (never guess into
     deletion)."""
     retention_days = _completed_oneshot_retention_days()
-    if retention_days <= 0:
-        return False
     cutoff = now - timedelta(days=retention_days)
     removed = False
     for rj in list(raw_jobs):
@@ -2650,9 +2659,14 @@ def _sweep_completed_oneshots(
             schedule = rj.get("schedule")
             if (schedule.get("kind") if isinstance(schedule, dict) else None) != "once":
                 continue
+            delete_at = rj.get("delete_at")
+            delete_at_dt = _parse_aware(delete_at) if isinstance(delete_at, str) else None
             last_run = rj.get("last_run_at")
             last_run_dt = _parse_aware(last_run) if isinstance(last_run, str) else None
-            if last_run_dt is None or last_run_dt >= cutoff:
+            expired = delete_at_dt is not None and delete_at_dt <= now
+            if delete_at_dt is None:
+                expired = retention_days > 0 and last_run_dt is not None and last_run_dt < cutoff
+            if not expired:
                 continue
             raw_jobs.remove(rj)
             removed = True

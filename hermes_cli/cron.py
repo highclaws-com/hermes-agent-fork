@@ -550,7 +550,8 @@ _JOB_ARG_FIELDS = (("name", "name"), ("deliver", "deliver"), ("failure_deliver",
                    ("repeat", "repeat"), ("script", "script"), ("workdir", "workdir"),
                    ("model", "model"), ("provider", "model_provider"),
                    ("monitor_script", "monitor_script"), ("monitor_url", "monitor_url"),
-                   ("continuity", "continuity"), ("reasoning_effort", "reasoning_effort"))
+                   ("continuity", "continuity"), ("reasoning_effort", "reasoning_effort"),
+                   ("delete_after", "delete_after"))
 
 
 def _job_api_kwargs(args) -> Dict[str, Any]:
@@ -577,6 +578,10 @@ def _print_job_details(job_data: Dict[str, Any]) -> None:
 def cron_create(args):
     # The gateway-lifecycle guard lives in cron.jobs.create_job (every creation path); a block
     # surfaces as result["error"].
+    job_kwargs = _job_api_kwargs(args)
+    if job_kwargs["delete_after"] is None:
+        # Direct callers may construct Namespace without the parser-added field.
+        job_kwargs["delete_after"] = 7
     result = _cron_api(
         action="create", schedule=args.schedule, prompt=args.prompt,
         skill=getattr(args, "skill", None),
@@ -584,7 +589,7 @@ def cron_create(args):
         no_agent=getattr(args, "no_agent", False) or None,
         **({"paused": args.paused, "paused_reason": getattr(args, "paused_reason", None)}
            if getattr(args, "paused", False) or getattr(args, "paused_reason", None) is not None else {}),
-        **_job_api_kwargs(args))
+        **job_kwargs)
     if not result.get("success"):
         print(color(f"Failed to create job: {result.get('error', 'unknown error')}", Colors.RED))
         return 1

@@ -278,6 +278,22 @@ def _resolve_conversation_history(
             stored_session_id = stored.get("session_id")
             if instructions is None:
                 instructions = stored.get("instructions")
+    conversation = body.get("conversation")
+    if not conversation_history and conversation:
+        # HighClaws compatibility: ``conversation`` may be a SessionDB id when
+        # no ResponseStore conversation/response supplied usable history.
+        db = self._ensure_session_db()
+        if db:
+            session = db.get_session(conversation)
+            if session:
+                try:
+                    conversation_history = db.get_messages_as_conversation(conversation)
+                    stored_session_id = conversation
+                    if instructions is None:
+                        instructions = session.get("system_prompt")
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to load session history for fallback %s: %s", conversation, exc)
     if not conversation_history and isinstance(raw_input, list) and len(raw_input) > 1:
         for msg in raw_input[:-1]:
             if isinstance(msg, dict) and msg.get("role") and msg.get("content"):

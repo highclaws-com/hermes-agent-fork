@@ -120,6 +120,13 @@ class CronScheduler(ABC):
         """Optional eager teardown; stop_event is the primary signal."""
         return None
 
+    def set_hooks(self, hooks: Any) -> None:
+        """Attach gateway hooks without changing provider start/fire signatures.
+
+        Optional and non-abstract so existing external providers remain compatible.
+        """
+        self._gateway_hooks = hooks
+
     # Optional hooks for external providers — default-safe; keep NON-abstract.
 
     def on_jobs_changed(self) -> None:
@@ -193,7 +200,10 @@ class CronScheduler(ABC):
         cooperatively (e.g. dashboard lifespan drain)."""
         from cron.scheduler import run_one_job
 
-        run_one_job(claimed_job, adapters=adapters, loop=loop, cancel_event=cancel_event)
+        run_one_job(
+            claimed_job, adapters=adapters, loop=loop, cancel_event=cancel_event,
+            hooks=getattr(self, "_gateway_hooks", None),
+        )
         return True
 
     def reconcile(self) -> None:
@@ -427,6 +437,7 @@ class InProcessCronScheduler(CronScheduler):
                     cron_tick(
                         verbose=False, adapters=adapters, loop=loop, sync=False,
                         can_dispatch=can_dispatch,
+                        hooks=getattr(self, "_gateway_hooks", None),
                     )
                 ok = True
             except BaseException as e:
@@ -531,6 +542,7 @@ class InProcessCronScheduler(CronScheduler):
                                 cron_tick(
                                     verbose=False, adapters=tick_adapters_for(_pname), loop=loop,
                                     sync=False, can_dispatch=can_dispatch,
+                                    hooks=getattr(self, "_gateway_hooks", None),
                                 )
                         except CronTickYielded as e:
                             # Yield for THIS profile only; one fresh gateway must not stop others.

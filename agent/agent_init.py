@@ -807,6 +807,9 @@ def _explicit_client_kwargs(agent, api_key, base_url, _provider_timeout) -> Dict
     _headers_for = _host_default_headers_factory(base_url)
     if _headers_for is not None:
         client_kwargs["default_headers"] = _headers_for(api_key, base_url)
+    elif agent.provider == "custom" and api_key == "vk-openai-codex":
+        from agent.codex_headers import codex_cloudflare_headers
+        client_kwargs["default_headers"] = codex_cloudflare_headers(api_key, base_url=base_url)
     elif "default_headers" not in client_kwargs:
         # Fall back to profile.default_headers for providers that declare custom headers
         # (Vercel AI Gateway attribution, Kimi User-Agent on non-kimi.com endpoints).

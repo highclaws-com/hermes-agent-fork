@@ -5154,6 +5154,9 @@ def _start_gateway_start_cron_and_housekeeping(runner):
     multiplex_cron = bool(getattr(runner.config, "multiplex_profiles", False))
     cron_provider = scheduler_for_profile_mode(
         resolve_cron_scheduler(), multiplex_profiles=multiplex_cron)
+    # Attach the live registry without widening provider start/fire signatures;
+    # third-party providers may implement the original interface exactly.
+    cron_provider.set_hooks(runner.hooks)
     cron_start_kwargs: Dict[str, Any] = {"adapters": runner.adapters, "loop": asyncio.get_running_loop()}
 
     # Multiplex: tell the ticker which profile homes to tick (else secondary profiles' jobs never

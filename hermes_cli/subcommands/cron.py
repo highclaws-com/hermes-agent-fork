@@ -36,6 +36,8 @@ def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
             "state stays visible in `hermes cron list`. Omit = failures "
             "follow --deliver.")
     cron_create.add_argument("--repeat", type=int, help="Optional repeat count")
+    cron_create.add_argument("--delete-after", type=int, default=7,
+        help="Days to keep a completed job (default: 7; 0 deletes immediately)")
     cron_create.add_argument("--skill", dest="skills", action="append",
         help="Attach a skill. Repeat to add multiple skills.")
     cron_create.add_argument("--script",
@@ -95,6 +97,8 @@ def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
         help="Override target for failure notices (same grammar as --deliver; "
             "'local' suppresses; '' clears the override)")
     cron_edit.add_argument("--repeat", type=int, help="New repeat count")
+    cron_edit.add_argument("--delete-after", type=int,
+        help="Days to keep a completed job; 0 deletes immediately")
     cron_edit.add_argument("--skill", dest="skills", action="append",
         help="Replace the job's skills with this set. Repeat to attach multiple skills.")
     cron_edit.add_argument("--add-skill", dest="add_skills", action="append",

@@ -279,6 +279,28 @@ class TestChatCompletionsBuildKwargs:
         assert kw["messages"][0]["content"] == "Hello"
         assert kw["timeout"] == 30.0
 
+    @pytest.mark.parametrize("provider_profile", [None, "custom"])
+    def test_session_header_is_sent_for_every_provider_and_build_path(self, transport, provider_profile):
+        from providers import get_provider_profile
+
+        kw = transport.build_kwargs(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "Hello"}],
+            session_id="sess-highclaws",
+            provider_name="openrouter",
+            provider_profile=(get_provider_profile(provider_profile) if provider_profile else None),
+            request_overrides={
+                "extra_headers": {
+                    "x-existing": "kept",
+                    "x-opencode-session": "stale",
+                }
+            },
+        )
+
+        assert kw["extra_headers"] == {
+            "x-existing": "kept",
+            "x-opencode-session": "sess-highclaws",
+        }
 
 
     def test_tools_included(self, transport):
