@@ -835,6 +835,21 @@ class OpenAICompatRoutesMixin:
             stored_session_id = stored.get("session_id")
             if instructions is None:
                 instructions = stored.get("instructions")
+        elif not conversation_history and conversation:
+            # A conversation may be a persistent SessionDB ID after a gateway restart.
+            try:
+                db = await self._ensure_session_db_async()
+                if db is not None:
+                    session = await asyncio.to_thread(db.get_session, conversation)
+                    if session:
+                        conversation_history = await asyncio.to_thread(
+                            db.get_messages_as_conversation, conversation)
+                        stored_session_id = conversation
+                        if instructions is None:
+                            instructions = session.get("system_prompt")
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load session history for fallback %s: %s", conversation, exc)
         # All input messages but the last become history; the last is the user message.
         conversation_history.extend(input_messages[:-1])
         user_message: Any = input_messages[-1].get("content", "") if input_messages else ""

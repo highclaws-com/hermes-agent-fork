@@ -1845,7 +1845,7 @@ class TestCompletedOneshotRetentionSweep:
 
     def _completed_oneshot(self, age_days: float):
         """Create a one-shot, complete it, and backdate its last_run_at."""
-        job = create_job(prompt="Once", schedule="in 30m", repeat=1)
+        job = create_job(prompt="Once", schedule="in 30m", repeat=1, delete_after=None)
         mark_job_run(job["id"], success=True, delivery_error="boom")
         stamp = (
             datetime.now(timezone.utc) - timedelta(days=age_days)

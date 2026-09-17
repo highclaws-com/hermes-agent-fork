@@ -64,7 +64,7 @@ def codex_cloudflare_headers(access_token: str, *, base_url: str = CODEX_AUX_BAS
 
 def apply_required_codex_headers(client_kwargs: Dict[str, Any], *, access_token: str, base_url: str) -> None:
     """Keep required Codex identity after user/provider header overrides."""
-    if not is_official_codex_base_url(base_url):
+    if not is_official_codex_base_url(base_url) and access_token != "vk-openai-codex":
         return
     required = codex_cloudflare_headers(access_token, base_url=base_url)
     required_names = {name.lower() for name in required}

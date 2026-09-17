@@ -2953,7 +2953,12 @@ def _run_one_job_body(
             _finish_interrupted_run(job, execution_id, delivery_error)
             return True
 
-        return _finish_completed_run(d, fire_owner, execution_id)
+        result = _finish_completed_run(d, fire_owner, execution_id)
+        from cron.completion_hooks import emit_job_end
+        emit_job_end(
+            job, d.success, final_response, d.error, d.delivery_error, loop,
+        )
+        return result
 
     except BaseException as e:  # noqa: BLE001 — deliberate: see below
         # BaseException, not Exception: CancelledError/KeyboardInterrupt/SystemExit propagate here.

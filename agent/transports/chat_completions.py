@@ -314,6 +314,11 @@ def _finish_kwargs(api_kwargs: dict[str, Any], sanitized: list, params: dict, *,
         api_kwargs, messages=sanitized, tools=api_kwargs.get("tools"), supports_prompt_cache_key=supports_prompt_cache_key,
         session_id=params.get("session_id"), cache_scope_id=params.get("cache_scope_id"),
     )
+    if params.get("session_id"):
+        api_kwargs["extra_headers"] = {
+            **api_kwargs.get("extra_headers", {}),
+            "x-opencode-session": params["session_id"],
+        }
     return api_kwargs
 
 

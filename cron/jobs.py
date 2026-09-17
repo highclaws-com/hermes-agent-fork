@@ -1537,11 +1537,16 @@ def _with_job(
 def _complete_job_record(job: Dict[str, Any]) -> None:
     """Retire *job* in place as a terminal completion (record kept for `cronjob list`)."""
     job.update(enabled=False, state="completed", next_run_at=None)
+    if job.get("delete_after") is not None:
+        job["delete_at"] = (
+            _hermes_now() + timedelta(days=job["delete_after"])
+        ).isoformat()
 
 
 def _activate_job_record(job: Dict[str, Any]) -> None:
     """Clear pause markers in place so *job* is runnable again."""
     job.update(enabled=True, state="scheduled", paused_at=None, paused_reason=None)
+    job.pop("delete_at", None)
 
 
 def _normalize_workdir(workdir: Optional[str]) -> Optional[str]:
@@ -1776,6 +1781,7 @@ def create_job(
     failure_deliver: Optional[str] = None,
     paused: bool = False,
     paused_reason: Optional[str] = None,
+    delete_after: Optional[int] = 7,
 ) -> Dict[str, Any]:
     """Create a new cron job and return the stored record.
 
@@ -1785,6 +1791,10 @@ def create_job(
     injected. workdir: absolute cwd for tools/scripts. monitor_script/monitor_url: cheap monitor
     source run FIRST each tick; unchanged output suppresses the agent run (mutually exclusive,
     incompatible with ``no_agent``). reasoning_effort: per-job pin; capability NOT validated."""
+    if delete_after is not None and (
+        type(delete_after) is not int or delete_after < 0
+    ):
+        raise ValueError("delete_after must be a non-negative number of days")
     if not isinstance(paused, bool):
         raise ValueError("paused must be a boolean.")
     if paused_reason is not None and not isinstance(paused_reason, str):
@@ -1841,6 +1851,7 @@ def create_job(
         "base_url": f["base_url"],
         "script": f["script"],
         "no_agent": f["no_agent"],
+        "delete_after": delete_after,
         "monitor_script": f["monitor_script"],
         "monitor_url": f["monitor_url"],
         "monitor_state": None,
@@ -1952,6 +1963,10 @@ def _reject_terminal_activation(job: Dict[str, Any], updated: Dict[str, Any], jo
 def _normalize_job_updates(job: Dict[str, Any], updates: Dict[str, Any]) -> None:
     """Normalize updates in place like create_job; invalid values raise BEFORE the merge. ``repeat``
     accepts the stored dict or a bare value (coerced, completed counter preserved)."""
+    if "delete_after" in updates:
+        days = updates["delete_after"]
+        if days is not None and (type(days) is not int or days < 0):
+            raise ValueError("delete_after must be a non-negative number of days")
     for key, norm in _UPDATE_FIELD_NORMALIZERS.items():
         if key in updates:
             updates[key] = norm(updates[key])
@@ -2468,6 +2483,10 @@ def mark_job_run(
         now = _hermes_now().isoformat()
         _record_run_outcome(job, success, error, delivery_error, status, now)
         _advance_after_run(job, now)
+        if job.get("state") == "completed" and job.get("delete_after") == 0:
+            jobs.pop(_i)
+            save_jobs(jobs, removed_ids={job_id})
+            return True
         from cron.unreachable_retry import clear_state, plan_retry
 
         if not success and model_unreachable and not is_terminal_job(job):
@@ -2811,13 +2830,20 @@ def _sweep_completed_oneshots(
     measured from ``last_run_at``; a record without a parseable one is kept (never guess into
     deletion)."""
     retention_days = _completed_oneshot_retention_days()
-    if retention_days <= 0:
-        return False
     cutoff = now - timedelta(days=retention_days)
     removed = False
     for rj in list(raw_jobs):
         try:
             if rj.get("state") != "completed":
+                continue
+            if rj.get("delete_at"):
+                if _parse_aware(rj["delete_at"]) <= now:
+                    raw_jobs.remove(rj)
+                    removed = True
+                    if removed_ids is not None:
+                        removed_ids.add(rj["id"])
+                continue
+            if retention_days <= 0:
                 continue
             schedule = rj.get("schedule")
             if (schedule.get("kind") if isinstance(schedule, dict) else None) != "once":
