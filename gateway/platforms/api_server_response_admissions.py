@@ -175,6 +175,21 @@ async def prepare_context(adapter, request, body, gateway_session_key, durable_k
             return None, error
         if instructions is None:
             instructions = stored.get('instructions')
+    elif not history and body.get('conversation'):
+        # A conversation may be a persistent SessionDB ID after a gateway restart.
+        conversation = body['conversation']
+        try:
+            db = await adapter._ensure_session_db_async()
+            if db is not None:
+                session = await asyncio.to_thread(db.get_session, conversation)
+                if session:
+                    history = await asyncio.to_thread(db.get_messages_as_conversation, conversation)
+                    stored_session_id = chain_root = conversation
+                    if instructions is None:
+                        instructions = session.get('system_prompt')
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                'Failed to load session history for fallback %s: %s', conversation, exc)
     history.extend(messages[:-1])
     user_message = messages[-1].get('content', '') if messages else ''
     if not _content_has_visible_payload(user_message):

@@ -3423,7 +3423,12 @@ def _run_one_job_body(
             return True
 
         from cron.scheduler_bookkeeping import finish_completed_run
-        return finish_completed_run(d, fire_owner, execution_id)
+        result = finish_completed_run(d, fire_owner, execution_id)
+        from cron.completion_hooks import emit_job_end
+        emit_job_end(
+            job, d.success, final_response, d.error, d.delivery_error, loop,
+        )
+        return result
 
     except BaseException as e:
         from cron.scheduler_authority import CronExecutionUnknown
