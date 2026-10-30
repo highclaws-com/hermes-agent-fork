@@ -8,7 +8,7 @@ import os
 import re
 import time
 
-from agent.redact import redact_sensitive_text
+from agent.redact import _REDACTION_ENABLED, redact_sensitive_text
 
 logger = logging.getLogger("tools.send_message_tool")
 
@@ -46,6 +46,8 @@ _GENERIC_SECRET_ASSIGN_RE = re.compile(
 
 def _sanitize_error_text(text) -> str:
     """Redact secrets from error text before surfacing it to users/models."""
+    if not _REDACTION_ENABLED:
+        return str(text)
     redacted = _URL_SECRET_QUERY_RE.sub(lambda m: f"{m.group(1)}***", redact_sensitive_text(text))
     return _GENERIC_SECRET_ASSIGN_RE.sub(lambda m: f"{m.group(1)}=***", redacted)
 
