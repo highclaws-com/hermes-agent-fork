@@ -47,7 +47,7 @@ _GENERIC_SECRET_ASSIGN_RE = re.compile(
 def _sanitize_error_text(text) -> str:
     """Redact secrets from error text before surfacing it to users/models."""
     if not _REDACTION_ENABLED:
-        return str(text)
+        return redact_sensitive_text(str(text))  # vault-registered values only (sandbox fork)
     redacted = _URL_SECRET_QUERY_RE.sub(lambda m: f"{m.group(1)}***", redact_sensitive_text(text))
     return _GENERIC_SECRET_ASSIGN_RE.sub(lambda m: f"{m.group(1)}=***", redacted)
 

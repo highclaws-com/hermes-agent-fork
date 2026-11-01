@@ -490,9 +490,15 @@ def browser_vault_fill(handle: str, task_id: Optional[str] = None) -> str:
     # Register the secret bytes with the model-egress redaction boundary
     # BEFORE they touch the page: any later browser_* result (including
     # browser_cdp Runtime.evaluate reads) that echoes them is scrubbed.
-    # Address values are not secrets but the card fields are: register every payment value.
-    for value in (secret.values() if meta.kind == "payment" else [secret.get("password", "")]):
-        register_vault_redaction_value(value)
+    # Sandbox fork: the registry is an exact-substring scrub over EVERY tool result, so only values long
+    # enough to be distinctive go in. Card number yes; exp month/year ("03", "2028"), CVC (3 digits),
+    # name and postal code would wipe ordinary numbers/words from unrelated output.
+    if meta.kind == "payment":
+        card = str(secret.get("card_number") or "")
+        for value in (card, "".join(ch for ch in card if ch.isdigit())):
+            register_vault_redaction_value(value)
+    elif meta.kind == "login":
+        register_vault_redaction_value(secret.get("password", ""))
 
     try:
         fill_result = _eval_js_secret(

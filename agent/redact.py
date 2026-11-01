@@ -102,9 +102,11 @@ _SENSITIVE_QUERY_PARAMS = frozenset({
 # see `_log_redaction_status()` in gateway/run.py and cli.py.
 _REDACT_ENABLED = os.getenv("HERMES_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
 
-# Sandbox fork: all redaction is disabled on purpose, including the force=True boundaries,
-# vault values and chat egress that security.redact_secrets cannot turn off. The sandbox agent
-# runs with full permissions by design. Set True to restore upstream behavior.
+# Sandbox fork: pattern-based redaction is disabled on purpose, including the force=True boundaries
+# and chat egress that security.redact_secrets cannot turn off, so the agent can read any credential
+# the user asks it to. The ONE exception is the vault registry above: exact values a browser_vault
+# fill/enter_code injected into a page are still scrubbed from every sink, so the model-blind autofill
+# keeps its promise. Nothing else is in that registry. Set True to restore upstream behavior.
 _REDACTION_ENABLED = False
 
 # Routed multiplex profiles: the import-time snapshot above is the LAUNCH profile's policy. A profile
@@ -940,10 +942,13 @@ def redact_sensitive_text(text: str, *, force: bool = False, code_file: bool = F
     if text is None:
         return None
     text = text if isinstance(text, str) else str(text)
-    if not text or not _REDACTION_ENABLED:
+    if not text:
         return text
-    # Vault secrets are a hard model-egress boundary: scrubbed regardless of the redact_secrets preference.
+    # Vault secrets are a hard model-egress boundary: scrubbed regardless of the redact_secrets preference
+    # and of the sandbox fork's _REDACTION_ENABLED switch.
     text = redact_registered_vault_values(text)
+    if not _REDACTION_ENABLED:
+        return text
     if not (force or _redact_enabled()):
         return text
     # ``secret_file`` is authoritative: a caller that classified the source as secret-bearing must not
@@ -1175,7 +1180,7 @@ def redact_for_egress(text: str) -> str:
     matcher can key on. Fails CLOSED: if the redactor raises, the raw text is never returned."""
     text = str(text or "")
     if not _REDACTION_ENABLED:
-        return text
+        return redact_registered_vault_values(text)
     try:
         text = redact_sensitive_text(text, force=True)
     except Exception:
@@ -1190,8 +1195,10 @@ def redact_terminal_output(output: str, command: str | None = None, *, force: bo
     pass runs only when ``command`` is an env dump or reads a secret-bearing file (``.env``,
     shell rc, Hermes ``config.yaml``); otherwise code_file=True avoids false positives on
     source/config dumps."""
-    if not output or not _REDACTION_ENABLED:
+    if not output:
         return output
+    if not _REDACTION_ENABLED:
+        return redact_registered_vault_values(output)
     code_file = not (is_env_dump_command(command) or _command_reads_secret_file(command))
     redacted = redact_sensitive_text(output, force=force, code_file=code_file)
     # Source-preserving output still gets the Python-repr pass on high-confidence
