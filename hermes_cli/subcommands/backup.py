@@ -32,4 +32,5 @@ def build_backup_parser(subparsers, *, cmd_backup: Callable) -> None:
         "-k", "--keep", type=_non_negative_keep, default=3, metavar="N",
         help="After a full backup, delete older hermes-backup-*.zip files in the output "
              "directory beyond the newest N (default 3; 0 keeps everything)")
+    backup_parser.add_argument("--prune-older-than", type=float, metavar="DAYS")
     backup_parser.set_defaults(func=cmd_backup)

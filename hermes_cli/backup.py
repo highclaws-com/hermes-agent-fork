@@ -487,7 +487,8 @@ def _write_zip_file(zf: zipfile.ZipFile, path: Path, arcname: str) -> None:
         raise
 
 
-def _zip_sqlite_snapshot(zf: zipfile.ZipFile, abs_path: Path, rel_path: Path, out_path: Path) -> Optional[int]:
+def _zip_sqlite_snapshot(zf: zipfile.ZipFile, abs_path: Path, rel_path: Path, out_path: Path,
+                         prune_days=None) -> Optional[int]:
     """Add a WAL-safe snapshot of *abs_path* to *zf*; return its byte size, or None on failure.
 
     Staged beside the output zip: /tmp may be a small tmpfs that cannot hold large databases.
@@ -497,6 +498,11 @@ def _zip_sqlite_snapshot(zf: zipfile.ZipFile, abs_path: Path, rel_path: Path, ou
     try:
         if not _safe_copy_db(abs_path, tmp_db):
             return None
+        if prune_days is not None and rel_path.name == "state.db":
+            from hermes_state import SessionDB
+            with SessionDB(db_path=tmp_db) as db:
+                db.prune_sessions(older_than_days=prune_days, db_only=True)
+                db.vacuum()
         _write_zip_file(zf, tmp_db, str(rel_path))
         return tmp_db.stat().st_size
     finally:
@@ -505,7 +511,7 @@ def _zip_sqlite_snapshot(zf: zipfile.ZipFile, abs_path: Path, rel_path: Path, ou
 
 def _write_zip_entries(
     zf: zipfile.ZipFile, files_to_add: list[tuple[Path, Path]], out_path: Path,
-    *, on_db_failure, on_error, on_progress, track_bytes: bool) -> int:
+    *, on_db_failure, on_error, on_progress, track_bytes: bool, prune_days=None) -> int:
     """Add every ``(abs_path, rel_path)`` to *zf*, WAL-safe for ``*.db``; return bytes archived.
 
     ``on_db_failure(rel_path)`` runs when a SQLite snapshot fails (may raise to abort);
@@ -516,7 +522,7 @@ def _write_zip_entries(
     for i, (abs_path, rel_path) in enumerate(files_to_add, 1):
         try:
             if abs_path.suffix == ".db":
-                size = _zip_sqlite_snapshot(zf, abs_path, rel_path, out_path)
+                size = _zip_sqlite_snapshot(zf, abs_path, rel_path, out_path, prune_days)
                 if size is None:
                     on_db_failure(rel_path)
                     continue
@@ -639,6 +645,7 @@ def _run_backup_locked(args, hermes_root: Path) -> bool:
             archive_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         total_bytes = _write_zip_entries(
             zf, files_to_add, out_path, on_progress=_progress, track_bytes=True,
+            prune_days=getattr(args, "prune_older_than", None),
             on_db_failure=lambda rel: errors.append(f"{rel}: SQLite safe copy failed"),
             on_error=lambda rel, exc: errors.append(f"{rel}: {exc}"))
         # External memory-provider state never includes ``.db`` files in practice, so no

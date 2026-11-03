@@ -363,7 +363,7 @@ class SessionMaintenanceMixin:
 
     def prune_sessions(self, older_than_days: Optional[float] = 90, source: str | None = None,
                        sessions_dir: Optional[Path] = None, exclude_active_write_guards: bool = False,
-                       deleted_ids: Optional[list] = None, **filters) -> int:
+                       deleted_ids: Optional[list] = None, db_only: bool = False, **filters) -> int:
         """Delete ended sessions inactive for ``older_than_days`` (an explicit ``started_before`` /
         ``last_active_before`` overrides it; None = no implicit bound) matching the filters.
         Children outside the window are orphaned (parent NULLed), not cascade-deleted.  With
@@ -399,6 +399,8 @@ class SessionMaintenanceMixin:
             self._delete_unreferenced_system_prompts(conn)
             return len(session_ids)
         count = self._execute_write(_do)
+        if db_only:
+            return count
         if count:
             emit_session_deleted(self, removed_ids, reason="prune", sessions_dir=sessions_dir)
         from hermes_state_media import collect_retired_media
