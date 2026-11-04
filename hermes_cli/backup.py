@@ -493,7 +493,8 @@ def _zip_sqlite_snapshot(zf: zipfile.ZipFile, abs_path: Path, rel_path: Path, ou
 
     Staged beside the output zip: /tmp may be a small tmpfs that cannot hold large databases.
     """
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False, dir=str(out_path.parent)) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False,
+                                     dir="/tmp" if prune_days is not None else str(out_path.parent)) as tmp:
         tmp_db = Path(tmp.name)
     try:
         if not _safe_copy_db(abs_path, tmp_db):
@@ -531,6 +532,8 @@ def _write_zip_entries(
                 _write_zip_file(zf, abs_path, str(rel_path))
                 if track_bytes:
                     total_bytes += abs_path.stat().st_size
+        except FileNotFoundError:
+            continue
         except (PermissionError, OSError, ValueError) as exc:
             on_error(rel_path, exc)
             continue
