@@ -60,9 +60,6 @@ class BitwardenLoginBackend(LoginBackend):
             env["BW_SESSION"] = session_token
         return env
 
-    def _session_token(self) -> Optional[str]:
-        return _unlock.get_session_token(self.name) or self._env_session or None
-
     def is_unlocked(self) -> bool:
         return bool(self._env_session) or _unlock.is_unlocked(self.name)
 
@@ -83,7 +80,7 @@ class BitwardenLoginBackend(LoginBackend):
             raise RuntimeError("Bitwarden was locked while unlocking; try again")
 
     def _run(self, *args: str) -> str:
-        token = self._session_token()
+        token = _unlock.get_session_token(self.name) or self._env_session
         if not token:
             raise UnlockRequired(self)
         proc = run_cli([str(self._bw()), *args, "--nointeraction"], env=self._env(token), timeout=_TIMEOUT,

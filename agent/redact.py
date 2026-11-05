@@ -70,9 +70,8 @@ def clear_vault_redaction_values() -> None:
 
 
 # Sandbox fork: the password-manager credentials the console's Passwords tab writes into a profile
-# .env are scrubbed as exact values too, so the agent never sees them while every other credential
-# (including ones the user pastes in chat) stays readable. Read from the profile's own .env file,
-# cached by mtime, so a reload is picked up without a restart and no fail-closed scope is needed.
+# .env are scrubbed as exact values too. Read from the profile's own .env file, cached by mtime,
+# so a reload is picked up without a restart.
 _PASSWORD_MANAGER_ENV_KEYS = ("BW_SESSION", "OP_SERVICE_ACCOUNT_TOKEN")
 _PASSWORD_MANAGER_ENV_CACHE: dict = {}  # profile home → (mtime_ns, values)
 
@@ -135,14 +134,6 @@ _SENSITIVE_QUERY_PARAMS = frozenset({
 # see `_log_redaction_status()` in gateway/run.py and cli.py.
 _REDACT_ENABLED = os.getenv("HERMES_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
 
-# Sandbox fork: pattern-based redaction is disabled on purpose, including the force=True boundaries
-# and chat egress that security.redact_secrets cannot turn off, so the agent can read any credential
-# the user asks it to. The ONE exception is the vault registry above: exact values a browser_vault
-# fill/enter_code injected into a page are still scrubbed from every sink, so the model-blind autofill
-# keeps its promise, plus the profile's BW_SESSION / OP_SERVICE_ACCOUNT_TOKEN values (see
-# _PASSWORD_MANAGER_ENV_KEYS). Nothing else is in that registry. Set True to restore upstream behavior.
-_REDACTION_ENABLED = False
-
 # Routed multiplex profiles: the import-time snapshot above is the LAUNCH profile's policy. A profile
 # served under a HERMES_HOME override resolves its own ``security.redact_secrets`` (its ``.env``
 # value first, like the standalone bridge in hermes_cli/main.py), cached per home so the hot path
@@ -153,8 +144,6 @@ _REDACT_ENABLED_LOCK = threading.Lock()
 
 def _redact_enabled() -> bool:
     """Effective redaction switch for the active profile (launch snapshot when no override)."""
-    if not _REDACTION_ENABLED:
-        return False
     from hermes_constants import get_hermes_home_override, hermes_home_key
     if get_hermes_home_override() is None:
         return _REDACT_ENABLED
@@ -978,11 +967,8 @@ def redact_sensitive_text(text: str, *, force: bool = False, code_file: bool = F
     text = text if isinstance(text, str) else str(text)
     if not text:
         return text
-    # Vault secrets are a hard model-egress boundary: scrubbed regardless of the redact_secrets preference
-    # and of the sandbox fork's _REDACTION_ENABLED switch.
+    # Vault secrets are a hard model-egress boundary: scrubbed regardless of the redact_secrets preference.
     text = redact_registered_vault_values(text)
-    if not _REDACTION_ENABLED:
-        return text
     if not (force or _redact_enabled()):
         return text
     # ``secret_file`` is authoritative: a caller that classified the source as secret-bearing must not
@@ -1213,8 +1199,6 @@ def redact_for_egress(text: str) -> str:
     sweep, because a ``Bearer <opaque>`` value with no vendor prefix carries no shape the prefix
     matcher can key on. Fails CLOSED: if the redactor raises, the raw text is never returned."""
     text = str(text or "")
-    if not _REDACTION_ENABLED:
-        return redact_registered_vault_values(text)
     try:
         text = redact_sensitive_text(text, force=True)
     except Exception:
@@ -1231,8 +1215,6 @@ def redact_terminal_output(output: str, command: str | None = None, *, force: bo
     source/config dumps."""
     if not output:
         return output
-    if not _REDACTION_ENABLED:
-        return redact_registered_vault_values(output)
     code_file = not (is_env_dump_command(command) or _command_reads_secret_file(command))
     redacted = redact_sensitive_text(output, force=force, code_file=code_file)
     # Source-preserving output still gets the Python-repr pass on high-confidence
