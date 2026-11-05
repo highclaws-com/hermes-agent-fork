@@ -69,13 +69,46 @@ def clear_vault_redaction_values() -> None:
         _VAULT_REDACTION_VALUES.pop(_vault_scope(), None)
 
 
+# Sandbox fork: the password-manager credentials the console's Passwords tab writes into a profile
+# .env are scrubbed as exact values too, so the agent never sees them while every other credential
+# (including ones the user pastes in chat) stays readable. Read from the profile's own .env file,
+# cached by mtime, so a reload is picked up without a restart and no fail-closed scope is needed.
+_PASSWORD_MANAGER_ENV_KEYS = ("BW_SESSION", "OP_SERVICE_ACCOUNT_TOKEN")
+_PASSWORD_MANAGER_ENV_CACHE: dict = {}  # profile home → (mtime_ns, values)
+
+
+def _password_manager_env_values(scope: str) -> tuple:
+    path = os.path.join(scope, ".env")
+    try:
+        mtime = os.stat(path).st_mtime_ns
+    except OSError:
+        return ()
+    cached = _PASSWORD_MANAGER_ENV_CACHE.get(scope)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    values = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                name, _, value = line.partition("=")
+                value = value.strip()
+                if name in _PASSWORD_MANAGER_ENV_KEYS and value:
+                    values.append(value)
+    except OSError:
+        return ()
+    _PASSWORD_MANAGER_ENV_CACHE[scope] = (mtime, tuple(values))
+    return tuple(values)
+
+
 def redact_registered_vault_values(text: str) -> str:
     """Exact-substring scrub of every vault secret value registered for the current profile."""
     if not isinstance(text, str) or not text:
         return text
+    scope = _vault_scope()
     with _VAULT_REDACTION_LOCK:
-        bucket = _VAULT_REDACTION_VALUES.get(_vault_scope())
-        values = sorted(bucket, key=len, reverse=True) if bucket else ()  # longest first: a substring never shadows its superstring
+        bucket = _VAULT_REDACTION_VALUES.get(scope)
+        values = set(bucket or ()) | set(_password_manager_env_values(scope))
+        values = sorted(values, key=len, reverse=True)  # longest first: a substring never shadows its superstring
     for value in values:
         if value in text:
             text = text.replace(value, "«redacted-vault-secret»")
@@ -106,7 +139,8 @@ _REDACT_ENABLED = os.getenv("HERMES_REDACT_SECRETS", "true").lower() in {"1", "t
 # and chat egress that security.redact_secrets cannot turn off, so the agent can read any credential
 # the user asks it to. The ONE exception is the vault registry above: exact values a browser_vault
 # fill/enter_code injected into a page are still scrubbed from every sink, so the model-blind autofill
-# keeps its promise. Nothing else is in that registry. Set True to restore upstream behavior.
+# keeps its promise, plus the profile's BW_SESSION / OP_SERVICE_ACCOUNT_TOKEN values (see
+# _PASSWORD_MANAGER_ENV_KEYS). Nothing else is in that registry. Set True to restore upstream behavior.
 _REDACTION_ENABLED = False
 
 # Routed multiplex profiles: the import-time snapshot above is the LAUNCH profile's policy. A profile

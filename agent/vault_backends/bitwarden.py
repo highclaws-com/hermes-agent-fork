@@ -37,6 +37,12 @@ class BitwardenLoginBackend(LoginBackend):
 
     def __init__(self, cfg: Optional[dict] = None):
         self.cfg = cfg or {}
+        # Sandbox fork: the sandbox manager logs bw in with the user's API key and writes the
+        # unlocked session (and the profile's bw state dir) into the profile .env, like 1Password's
+        # OP_SERVICE_ACCOUNT_TOKEN: a non-interactive unlock for gateway sessions with no prompt.
+        from agent.secret_scope import get_secret
+        self._env_session = get_secret("BW_SESSION", "") or ""
+        self._appdata_dir = get_secret("BITWARDENCLI_APPDATA_DIR", "") or ""
 
     def _bw(self) -> Path:
         explicit = str(self.cfg.get("binary_path") or "")
@@ -48,12 +54,17 @@ class BitwardenLoginBackend(LoginBackend):
     def _env(self, session_token: Optional[str]) -> dict[str, str]:
         env = {k: os.environ[k] for k in _ENV_KEEP if k in os.environ}
         env["NO_COLOR"] = "1"
+        if self._appdata_dir:
+            env["BITWARDENCLI_APPDATA_DIR"] = self._appdata_dir
         if session_token:
             env["BW_SESSION"] = session_token
         return env
 
+    def _session_token(self) -> Optional[str]:
+        return _unlock.get_session_token(self.name) or self._env_session or None
+
     def is_unlocked(self) -> bool:
-        return _unlock.is_unlocked(self.name)
+        return bool(self._env_session) or _unlock.is_unlocked(self.name)
 
     def unlock(self, master_password: str) -> None:
         # bw refuses a piped password ("Master password is required"); its non-interactive contract is
@@ -72,7 +83,7 @@ class BitwardenLoginBackend(LoginBackend):
             raise RuntimeError("Bitwarden was locked while unlocking; try again")
 
     def _run(self, *args: str) -> str:
-        token = _unlock.get_session_token(self.name)
+        token = self._session_token()
         if not token:
             raise UnlockRequired(self)
         proc = run_cli([str(self._bw()), *args, "--nointeraction"], env=self._env(token), timeout=_TIMEOUT,
