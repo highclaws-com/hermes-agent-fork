@@ -92,6 +92,11 @@ class BitwardenLoginBackend(LoginBackend):
             err = scrub_ansi(proc.stderr or "")
             if "locked" in err.lower() or "session" in err.lower():
                 _unlock.lock(self.name)
+                if token == self._env_session:
+                    # Sandbox fork: the console-provisioned BW_SESSION expired; drop it from the profile .env.
+                    from hermes_cli.config import remove_env_value
+                    self._env_session = ""
+                    remove_env_value("BW_SESSION")
                 raise UnlockRequired(self)
             raise RuntimeError(f"bw failed: {err[:200]}")
         return proc.stdout or ""
