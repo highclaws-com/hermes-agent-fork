@@ -2712,6 +2712,13 @@ class TestStoredSessionModelFilter:
         adapter = _make_routing_adapter({})
         assert adapter._stored_session_model({"model": adapter._model_name}) is None
 
+    def test_unbound_placeholder_is_filtered(self):
+        # HighClaws monkey patch, not upstream Hermes: a first turn before the
+        # sandbox binds a model persists HighClaws' "unset" placeholder from
+        # config.yaml; replaying it pinned the session to a 403 forever.
+        adapter = _make_routing_adapter({})
+        assert adapter._stored_session_model({"model": "unset"}) is None
+
     def test_real_model_passes_through(self):
         adapter = _make_routing_adapter({})
         assert adapter._stored_session_model({"model": "google/gemini-3.7-flash"}) == "google/gemini-3.7-flash"

@@ -1831,7 +1831,11 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         """The model persisted on a session row, minus the virtual alias (replaying
         "hermes-agent" upstream as a provider model id 400s)."""
         stored = session.get("model") if isinstance(session, dict) else None
-        if not stored or stored == self._model_name:
+        # HighClaws monkey patch, not upstream Hermes: also drop "unset", the placeholder
+        # HighClaws ships as model.default in app/sandbox_env_default/hermes/config.yaml
+        # until sandbox_mgr binds a model. A turn sent before binding persists "unset" on
+        # the row, which would otherwise pin the session to a 403 after binding.
+        if not stored or stored in (self._model_name, "unset"):
             return None
         return stored
 
