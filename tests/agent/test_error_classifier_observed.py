@@ -69,6 +69,9 @@ OBSERVED = [
     ("router-no-workers", "custom", _status(openai.InternalServerError, 500, {"error": {
         "message": "No available workers (all circuits open or unhealthy)"}}),
      FailoverReason.server_error, True, False),
+    ("relay-400-typed-server-error", "custom", _status(openai.BadRequestError, 400, {"error": {
+        "type": "server_error", "message": "Upstream request failed: Endpoint is unavailable."}}),
+     FailoverReason.server_error, True, False),
 ]
 
 

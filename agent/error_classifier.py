@@ -1251,6 +1251,11 @@ def _classify_400(c: _Ctx) -> Verdict:
     # prompt_cache_retention ~20% of the time): transient, retry identical request.
     if _is_server_injected_param_rejection(msg, c.provider_slug):
         return _V_SERVER_ERROR
+    # 400 the provider itself types as its own fault, e.g. a relay whose backend was down:
+    # {"error": {"type": "server_error", "message": "Upstream request failed: Endpoint is
+    # unavailable."}}: transient, retry identical request.
+    if str(_error_obj(c.body).get("type") or "").lower() == "server_error":
+        return _V_SERVER_ERROR
     if any(p in msg for p in _MALFORMED_TOOL_ARGS_PATTERNS):
         return _V_MALFORMED_TOOL_ARGS
     if any(p in msg for p in _ROLE_ALTERNATION_PATTERNS):
